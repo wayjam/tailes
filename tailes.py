@@ -1,6 +1,6 @@
 import datetime
 import platform
-import signal  # Dealing with Ctrl+C
+import signal
 import sys
 import time
 from argparse import ArgumentParser
@@ -41,14 +41,10 @@ def tail(args):
     global DEBUG
     DEBUG = args.debug
 
-    # --endpoint
-    endpoint, ssl = normalize_endpoint(args.endpoint)
-    # --type
-    doc_type = args.type
-    # -f --nonstop
-    non_stop = args.nonstop
-    # -n --docs
-    docs = args.docs
+    endpoint, ssl = normalize_endpoint(args.endpoint)  # endpoint
+    doc_type = args.type  # type
+    non_stop = args.nonstop  # nonstop
+    docs = args.docs  # docs
 
     if args.index:
         index = args.index
@@ -74,7 +70,8 @@ def tail(args):
         raise Exception("index not exists")
 
     interval = 1  # seconds
-    to_the_past = 10000  # milliseconds
+
+    # to_the_past = 10000  # milliseconds
 
     # # Get the latest event timestamp from the Index
     # latest_event_timestamp = get_latest_event_timestamp(opts)
@@ -83,7 +80,7 @@ def tail(args):
     # # Go 10 seconds to the past.
     # from_timestamp = latest_event_timestamp - to_the_past
 
-    outputer = output()
+    outputer = output(args.format)
     next(outputer)
 
     from_timestamp = int(time.time() * 1000)
@@ -106,13 +103,13 @@ def tail(args):
             outputer.send(res)
             from_timestamp = res[-1]['sort'][0]
 
-        # Wait for Elasticsearch to index a bit more of stuff and Print meanwhile
+        # wait
         wait(interval)
     outputer.close()
 
 
-def output():
-    printer = printout('json')
+def output(style):
+    printer = printout(style)
     next(printer)
     while True:
         events = yield
@@ -147,7 +144,7 @@ def normalize_endpoint(endpoint):
     return u.geturl(), u.scheme == "https"
 
 
-# From timestamp in milliseconds to Elasticsearch format (seconds.milliseconds). i.e: 2016-07-14T13:37:45.123Z
+# format timestamp in milliseconds to Elasticsearch format(iso): 2016-07-14T13:37:45.123Z
 def ms_to_iso8601(ms):
     return datetime.datetime.utcfromtimestamp(
         float(ms) / 1000).isoformat(timespec='milliseconds') + 'Z'
@@ -160,14 +157,13 @@ def get_latest_event_timestamp(opts):
                                _source=False,
                                sort="@timestamp:desc")
 
-    print(res)
     if len(res['hits']['hits']) != 0:
         timestamp = res['hits']['hits'][0]['sort'][0]
         debug(f'get latest event timestamp : {timestamp}')
         return timestamp
     else:
         raise Exception(
-            f'get_latest_event_timestamp: No results found with the current search criteria under index={index}'
+            f'No events found with the current search criteria under index={index}'
         )
 
 
@@ -236,12 +232,16 @@ def main():
                         '--docs',
                         help='Number of documents.',
                         type=int,
-                        metavar="[0-100]",
+                        metavar="[0-10000]",
                         choices=range(0, 10000),
                         default=10)
     parser.add_argument('--verify_certs',
                         help="Verify certificate",
                         action="store_true")
+    parser.add_argument('--format',
+                        help="Format style",
+                        choices=["kv", "json"],
+                        default="json")
     parser.add_argument('-d', '--debug', help='Debug', action="store_true")
     args = parser.parse_args()
 
