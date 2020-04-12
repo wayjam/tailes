@@ -7,6 +7,8 @@ from argparse import ArgumentParser
 import pprint
 from typing import NamedTuple
 from urllib.parse import urlparse
+import threading
+from queue import Queue
 
 try:
     from elasticsearch import Elasticsearch
@@ -26,7 +28,6 @@ class Options(NamedTuple):
 DEBUG = False
 
 
-# Ctrl+C
 def signal_handler(signal, frame):
     debug('Ctrl+C pressed!')
     sys.exit(0)
@@ -34,13 +35,10 @@ def signal_handler(signal, frame):
 
 def debug(*args):
     if DEBUG:
-        print("DEBUG: ", *args)
+        print("DEBUG:", *args)
 
 
 def tail(args):
-    global DEBUG
-    DEBUG = args.debug
-
     endpoint, ssl = normalize_endpoint(args.endpoint)  # endpoint
     doc_type = args.type  # type
     non_stop = args.nonstop  # nonstop
@@ -80,16 +78,20 @@ def tail(args):
     # # Go 10 seconds to the past.
     # from_timestamp = latest_event_timestamp - to_the_past
 
-    outputer = output(args.format)
-    next(outputer)
+    q = Queue()
+    q.join()
+    outputer = threading.Thread(target=output, args=(
+        args.format,
+        q,
+    ))
+    outputer.start()
 
     from_timestamp = int(time.time() * 1000)
 
     res = search_events(None, opts, docs, 'desc')
-
     if len(res) > 0:
         res.reverse()
-        outputer.send(res)
+        q.put(res)
         from_timestamp = res[-1]['sort'][0]
 
     if not non_stop:
@@ -99,22 +101,22 @@ def tail(args):
         from_date_time = ms_to_iso8601(from_timestamp)
 
         res = search_events(from_date_time, opts)
+
         if len(res) > 0:
-            outputer.send(res)
+            q.put(res)
             from_timestamp = res[-1]['sort'][0]
 
-        # wait
         wait(interval)
-    outputer.close()
 
 
-def output(style):
+def output(style, q):
     printer = printout(style)
     next(printer)
     while True:
-        events = yield
+        events = q.get()
         for e in events:
             printer.send(e['_source'])
+        q.task_done()
     printer.close()
 
 
@@ -247,6 +249,9 @@ def main():
 
     # Ctrl+C handler
     signal.signal(signal.SIGINT, signal_handler)
+
+    global DEBUG
+    DEBUG = args.debug
 
     tail(args)
 
