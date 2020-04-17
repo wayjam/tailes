@@ -28,9 +28,15 @@ class Options(NamedTuple):
 DEBUG = False
 
 
-def signal_handler(signal, frame):
-    debug('Ctrl+C pressed!')
-    sys.exit(0)
+class GracefulKiller:
+    stop = False
+
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit)
+
+    def exit(self, signal, frame):
+        debug("Exiting now")
+        self.stop = True
 
 
 def debug(*args):
@@ -38,7 +44,7 @@ def debug(*args):
         print("DEBUG:", *args)
 
 
-def tail(args):
+def tail(args, killer):
     endpoint, ssl = normalize_endpoint(args.endpoint)  # endpoint
     doc_type = args.type  # type
     non_stop = args.nonstop  # nonstop
@@ -98,6 +104,9 @@ def tail(args):
         return
 
     while True:
+        if killer.stop:
+            q.put(None)
+            break
         from_date_time = ms_to_iso8601(from_timestamp)
 
         res = search_events(from_date_time, opts)
@@ -114,6 +123,8 @@ def output(style, q):
     next(printer)
     while True:
         events = q.get()
+        if events is None:
+            break
         for e in events:
             printer.send(e['_source'])
         q.task_done()
@@ -247,13 +258,12 @@ def main():
     parser.add_argument('-d', '--debug', help='Debug', action="store_true")
     args = parser.parse_args()
 
-    # Ctrl+C handler
-    signal.signal(signal.SIGINT, signal_handler)
+    killer = GracefulKiller()
 
     global DEBUG
     DEBUG = args.debug
 
-    tail(args)
+    tail(args, killer)
 
 
 if __name__ == "__main__":
