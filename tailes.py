@@ -135,16 +135,19 @@ def printout(style='json'):
     pp = pprint.PrettyPrinter(indent=1, depth=1, width=250, compact=True)
     while True:
         msg = yield
+        out = ''
         if style == 'kv':
             if isinstance(msg, dict):
                 s = []
                 for k, v in msg.items():
                     s.append(f'{k}={v}')
-                print(' '.join(s))
+                out = ' '.join(s)
             else:
-                print(msg)
+                out = msg
         else:
-            pp.pprint(msg)
+            out = pp.pformat(msg)
+        sys.stdout.write(out+"\n")
+        sys.stdout.flush()
 
 
 def normalize_endpoint(endpoint):
